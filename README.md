@@ -4,7 +4,8 @@
 ![alt text](./1.png)
 
 
-Here we only provide the functions of contextual assessment and adversarial attack in 3D object detection. The whole project is based on 3D_Corruptions_AD and built upon MMDetection3D and OpenPCDet with necessary modifications of its source code.
+Here we only provide the functions of contextual assessment and adversarial attack in 3D object detection. The whole project is based on 3D_Corruptions_AD and OCCAM. 
+It should be built upon MMDetection3D and OpenPCDet with necessary modifications of its source code.
 
 ## Prerequisites
 * Python (3.9)
@@ -109,6 +110,44 @@ test_pipeline = [
 
 ### Implemented in OPENPCDet pipeline
 
-use `CAMGA_attack.py` replace `tools/test.py`, and move `eval_utils/camga_attack_utils.py` to `tools/utils/`
+use `CAMGA_attack.py` replace `tools/test.py`,and move `eval_utils/camga_attack_utils.py` to `tools/utils/`.
+The main change is to transform the evaluation process to adversarial attacks.
+```python
+for i, batch_dict in enumerate(dataloader):
+        load_data_to_gpu(batch_dict)
+        pert = pert_utils.generate_pert_for_scenes(batch_dict)
+        pert.requires_grad_(True)
+        #########################################################
+        best_loss = torch.tensor(1e+6).cuda()
+        best_pert = None
+        learning_rate = 1e-4
+        optimizer = optim.Adam([batch_dict['pert']], lr=learning_rate)
+        # points = batch_dict['points'].clone()
+
+
+        for query in range(40):
+            # batch_dict['points'] = pert_utils.add_pert_to_point(pert_voxel_sampled2, points, in_voxel_mask)
+            pred_dicts, ret_dict = model(batch_dict)
+
+            iou = ret_dict.get('iou3d_roi')
+            scores = pred_dicts['pred_scores']
+            score_and_iou = torch.cat((scores.view(-1, 1), iou), 1)
+
+            _, adv_loss = loss_utils.adv_loss(pert, score_and_iou)
+            per_loss = loss_utils.calculate_per_loss(pred_dicts, pert, k=1.5)
+            total_loss = adv_loss + 0.1 * per_loss
+
+
+            if total_loss < best_loss:
+                best_loss = total_loss.detach()
+                best_pred = pred_dicts
+                best_ret = ret_dict
+            optimizer.zero_grad()
+            # get_dot = register_hooks(total_loss)
+            total_loss.backward()
+            optimizer.step()
+
+```
+
 
 
